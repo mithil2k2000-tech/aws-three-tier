@@ -8,7 +8,8 @@ FROM python:3.13-slim
 ARG APP_VERSION=dev
 ARG BREAK_HEALTHCHECK=false
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_VERSION=$APP_VERSION BREAK_HEALTHCHECK=$BREAK_HEALTHCHECK
-RUN useradd --system --uid 10001 --no-create-home app
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home app
 COPY --from=build /install /usr/local
 WORKDIR /srv
 COPY src ./src

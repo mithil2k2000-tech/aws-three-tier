@@ -1,0 +1,10 @@
+# Accepted risks. Each has a matching Checkov skip with the same reasoning.
+# SSE-S3 instead of a customer-managed KMS key: ALB log delivery requires SSE-S3; site and state buckets: cost (see docs/well-architected.md)
+AWS-0132
+AVD-AWS-0132
+# Internal ALB listens on HTTP; viewers use HTTPS to CloudFront, which reaches the ALB over a VPC origin (ADR-0002)
+AWS-0054
+AVD-AWS-0054
+# Tasks need HTTPS egress to ECR, Secrets Manager and CloudWatch Logs through the NAT; port 443 only (VPC interface endpoints would remove this, at extra cost)
+AWS-0104
+AVD-AWS-0104
