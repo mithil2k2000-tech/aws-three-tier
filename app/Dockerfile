@@ -11,6 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_VERSION=$APP_VERSION BREAK_
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home app
 COPY --from=build /install /usr/local
+# Patch base-image Python packages not in requirements.txt and drop build-only tooling.
+RUN for p in urllib3 msgpack; do \
+      if python -m pip show "$p" >/dev/null 2>&1; then python -m pip install --no-cache-dir --upgrade "$p"; fi; \
+    done \
+    && python -m pip uninstall -y setuptools wheel 2>/dev/null || true
 WORKDIR /srv
 COPY src ./src
 USER 10001
