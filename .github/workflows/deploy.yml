@@ -1,0 +1,86 @@
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "deploy" to build, plan and (after approval) apply
+        required: true
+      broken_release:
+        description: Game day only. Ship a release whose health check fails, to exercise automatic rollback.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency: { group: prod-deploy, cancel-in-progress: false }
+
+env:
+  TF_VERSION: 1.13.4
+
+jobs:
+  # One job so that only the deploy role (trusted from the 'prod' environment, which has required reviewers) is used.
+  # The PR that merged this commit already showed its plan from the read-only plan role.
+  deploy:
+    if: inputs.confirm == 'deploy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm # native ARM64 build for Graviton tasks
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - id: meta
+        run: |
+          TAG="${GITHUB_SHA::12}${{ inputs.broken_release && '-broken' || '' }}"
+          echo "image=${{ vars.ECR_REPOSITORY_URL }}:$TAG" >> "$GITHUB_OUTPUT"
+      - name: build
+        run: |
+          docker build app -t "${{ steps.meta.outputs.image }}" \
+            --build-arg APP_VERSION="${GITHUB_SHA::12}" \
+            --build-arg BREAK_HEALTHCHECK="${{ inputs.broken_release }}"
+      - name: trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - run: docker push "${{ steps.meta.outputs.image }}"
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
+      - name: plan
+        working-directory: envs/prod
+        run: |
+          terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform plan -input=false -out=tfplan \
+            -var "owner=${{ vars.OWNER_EMAIL }}" -var "alert_email=${{ vars.OWNER_EMAIL }}" \
+            -var "image=${{ steps.meta.outputs.image }}" -var "teardown_friendly=${{ vars.TEARDOWN_FRIENDLY || 'true' }}"
+          terraform show -no-color tfplan | tail -c 60000 > plan.txt
+          { echo '### Plan being applied'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: apply
+        working-directory: envs/prod
+        run: terraform apply -input=false tfplan
+      - name: publish frontend
+        working-directory: envs/prod
+        run: |
+          aws s3 sync ../../frontend "s3://$(terraform output -raw site_bucket)" --delete
+          aws cloudfront create-invalidation --distribution-id "$(terraform output -raw distribution_id)" --paths "/*" >/dev/null
+      - name: wait for the service to settle
+        working-directory: envs/prod
+        run: |
+          CLUSTER=$(terraform output -raw cluster_name); SERVICE=$(terraform output -raw service_name)
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE" || true
+          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[].{status:status,rollout:rolloutState,reason:rolloutStateReason,task:taskDefinition}' --output table
+      - name: smoke test
+        working-directory: envs/prod
+        run: |
+          URL=$(terraform output -raw url)
+          for i in $(seq 1 20); do
+            curl -fsS "$URL/api/healthz" && exit 0; sleep 15
+          done
+          echo "health check failed at $URL"; exit 1

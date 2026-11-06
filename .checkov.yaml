@@ -1,0 +1,9 @@
+framework:
+  - terraform
+  - github_actions
+  - dockerfile
+skip-path:
+  - .venv
+  - .terraform
+skip-check:
+  - CKV_GHA_7 # workflow_dispatch inputs are a typed confirmation and a game-day flag; images build from the commit

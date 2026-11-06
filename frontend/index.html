@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three-tier notes</title>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --line:#dcdcd6; --accent:#1f5fbf; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ecece8; --muted:#9a9a94; --line:#33332f; --accent:#7aa7ff; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:32px 16px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 24px; }
+  form { display:flex; gap:8px; }
+  input { flex:1; padding:10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:inherit; }
+  button { padding:10px 16px; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; }
+  ul { list-style:none; padding:0; margin:24px 0 0; }
+  li { padding:10px 0; border-bottom:1px solid var(--line); }
+  small { color:var(--muted); }
+  #status { color:var(--muted); font-size:.875rem; margin-top:24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Notes</h1>
+  <p class="sub">CloudFront → S3 (this page) and an internal ALB → ECS Fargate → RDS PostgreSQL.</p>
+  <form id="f"><input id="t" maxlength="500" placeholder="Write a note" required><button>Add</button></form>
+  <ul id="list"></ul>
+  <div id="status"></div>
+</main>
+<script>
+const list = document.getElementById('list'), status = document.getElementById('status');
+async function load() {
+  try {
+    const [h, n] = await Promise.all([fetch('/api/healthz'), fetch('/api/notes')]);
+    const health = await h.json();
+    status.textContent = `API ${health.status ?? 'unavailable'} · version ${health.version ?? '?'}`;
+    list.replaceChildren(...(await n.json()).map(x => {
+      const li = document.createElement('li');
+      li.textContent = x.text + ' ';
+      const s = document.createElement('small'); s.textContent = new Date(x.created_at).toLocaleString();
+      li.append(s); return li;
+    }));
+  } catch (e) { status.textContent = 'API unavailable'; }
+}
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const t = document.getElementById('t');
+  await fetch('/api/notes', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({text:t.value}) });
+  t.value = ''; load();
+});
+load();
+</script>
+</body>
+</html>

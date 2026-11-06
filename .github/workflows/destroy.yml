@@ -1,0 +1,29 @@
+name: destroy
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "destroy" to delete the prod stack (bootstrap resources are kept)
+        required: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  destroy:
+    if: inputs.confirm == 'destroy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.13.4, terraform_wrapper: false }
+      - working-directory: envs/prod
+        run: |
+          terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="region=${{ vars.AWS_REGION }}"
+          IMAGE=$(terraform output -raw image 2>/dev/null || echo "${{ vars.ECR_REPOSITORY_URL }}:none")
+          terraform destroy -input=false -auto-approve \
+            -var "owner=${{ vars.OWNER_EMAIL }}" -var "alert_email=${{ vars.OWNER_EMAIL }}" -var "image=$IMAGE" -var "teardown_friendly=true"

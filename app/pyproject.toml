@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 130
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "S104"]  # asserts in tests; binding 0.0.0.0 is required inside the container
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning"]

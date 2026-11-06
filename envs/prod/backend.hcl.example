@@ -1,0 +1,2 @@
+bucket = "three-tier-tfstate-<account-id>"
+region = "eu-west-2"

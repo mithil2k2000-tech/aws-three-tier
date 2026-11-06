@@ -1,0 +1,9 @@
+owner       = "you@example.com"
+alert_email = "you@example.com"
+image       = "<account-id>.dkr.ecr.eu-west-2.amazonaws.com/three-tier-api:<git-sha>"
+
+# Cost levers (see docs/cost.md)
+nat_gateways      = 1     # 2 = one per AZ (resilient, +$35/month)
+multi_az_db       = false # true = standby DB in a second AZ (doubles DB cost)
+enable_waf        = false
+teardown_friendly = true  # demo: lets destroy remove everything in one go
